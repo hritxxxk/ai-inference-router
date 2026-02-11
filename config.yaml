@@ -1,0 +1,19 @@
+# Configuration for AI Inference Router
+
+# Model costs in USD per request
+MODEL_COSTS:
+  gemini_pro: 0.015
+  gemma3: 0.001
+
+# Semantic cache settings
+SEMANTIC_CACHE:
+  similarity_threshold: 0.9
+  max_cache_size: 10000  # Maximum number of entries in cache
+  eviction_policy: "LRU"  # Options: LRU, FIFO, TTL
+
+# Quota settings
+QUOTA_DEFAULT_LIMIT: 10
+
+# Complexity classifier settings
+CLASSIFIER:
+  token_threshold: 128  # Threshold for high complexity
