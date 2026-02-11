@@ -23,7 +23,7 @@ async def get_ai_response(prompt: str, complexity: str) -> Tuple[str, str, float
     
     For LOW complexity requests, this function attempts to use the cheaper
     Gemma3 model first. If that fails, it falls back to the more expensive
-    Gemini Pro model. For HIGH complexity requests, it directly uses Gemini Pro.
+    Gemini-2.5-Pro model. For HIGH complexity requests, it directly uses Gemini-2.5-Pro.
     
     This approach optimizes costs while maintaining reliability through
     fallback mechanisms.
@@ -48,19 +48,19 @@ async def get_ai_response(prompt: str, complexity: str) -> Tuple[str, str, float
             
             return response, model_name, latency, cost
         except Exception as e:
-            logger.warning(f"Cheap model (Gemma3) failed: {e}. Falling back to Gemini Pro.")
+            logger.warning(f"Cheap model (Gemma3) failed: {e}. Falling back to Gemini-2.5-Pro.")
             
             # Fallback to expensive route if cheap fails
             # This ensures request completion even when preferred model is unavailable
             response, latency = await call_gemini_pro(prompt)
-            model_name = "Gemini-Pro (Fallback)"
+            model_name = "Gemini-2.5-Pro (Fallback)"
             cost = 0.015  # Cost in USD
             
             return response, model_name, latency, cost
     
     # For HIGH complexity, always use expensive model as it's required for quality
     response, latency = await call_gemini_pro(prompt)
-    model_name = "Gemini-Pro"
+    model_name = "Gemini-2.5-Pro"
     cost = 0.015  # Cost in USD
     
     return response, model_name, latency, cost

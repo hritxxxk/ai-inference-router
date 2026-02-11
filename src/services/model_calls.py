@@ -3,8 +3,9 @@ Module for simulating AI model calls in the inference router.
 
 This module contains mock implementations of calls to different AI models
 with varying computational complexity and response times. These functions
-simulate the behavior of real API calls to expensive and inexpensive models,
-allowing for testing of the routing logic without incurring actual costs.
+simulate the behavior of real API calls to expensive (Gemini-2.5-Pro) and 
+inexpensive (Gemma3) models, allowing for testing of the routing logic 
+without incurring actual costs.
 """
 
 import asyncio
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 async def call_gemini_pro(prompt: str) -> Tuple[str, float]:
     """
-    Mock function to simulate calling Gemini Pro model.
+    Mock function to simulate calling Gemini-2.5-Pro model.
     
     This represents an expensive, high-capability model suitable for complex
     reasoning tasks. The function simulates the latency and cost characteristics
@@ -38,9 +39,9 @@ async def call_gemini_pro(prompt: str) -> Tuple[str, float]:
     latency = end_time - start_time
     
     # Generate a mock response that indicates deep analysis
-    response = f"Gemini Pro: Deep analysis of '{prompt[:30]}...' (Token count: ~{len(prompt.split())})"
+    response = f"Gemini-2.5-Pro: Deep analysis of '{prompt[:30]}...' (Token count: ~{len(prompt.split())})"
     
-    logger.info(f"Gemini Pro call completed with latency: {latency:.2f}s")
+    logger.info(f"Gemini-2.5-Pro call completed with latency: {latency:.2f}s")
     
     return response, latency
 

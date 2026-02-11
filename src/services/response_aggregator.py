@@ -56,7 +56,7 @@ def build_response_aggregator(
     if model_used == "Gemma3":
         # Savings when using cheaper model instead of expensive one
         cost_savings_usd = gemini_cost - gemma_cost
-    elif model_used == "Gemini-Pro (Fallback)":
+    elif model_used == "Gemini-2.5-Pro (Fallback)":
         # No savings when falling back to expensive model
         cost_savings_usd = 0.0
     

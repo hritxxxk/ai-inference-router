@@ -48,7 +48,7 @@ Abstract interface supporting different storage backends (in-memory for POC, Red
 Simulates vector database lookup using mocked cosine similarity with configurable threshold
 
 ### Model Call Handlers
-Mock implementations showing latency differences between expensive and cheap models
+Mock implementations showing latency differences between expensive (Gemini-2.5-Pro) and cheap (Gemma3) models
 
 ### Response Aggregator
 Builds comprehensive responses with cost and performance metrics
