@@ -1,11 +1,13 @@
 import time
 import logging
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.responses import StreamingResponse
 from src.models.schemas import AIRequest, AIResponse
-from src.services.quota_store import InMemoryQuotaStore
+from src.services.quota_store import RedisQuotaStore
 from src.services.semantic_cache import semantic_cache_lookup, semantic_cache_store
 from src.services.classifier import classify_complexity
 from src.services.fallback_handler import get_ai_response
+from src.services.model_calls import call_gemini_pro_stream
 from src.services.response_aggregator import build_response_aggregator
 from src.middleware.timing_middleware import TimingMiddleware
 
@@ -21,7 +23,7 @@ app = FastAPI(title="AI Inference Router")
 app.add_middleware(TimingMiddleware)
 
 # Initialize services
-quota_manager = InMemoryQuotaStore()
+quota_manager = RedisQuotaStore()
 
 
 @app.post("/generate", response_model=AIResponse)
@@ -100,8 +102,56 @@ async def handle_request(request: AIRequest):
     return AIResponse(**response)
 
 
+@app.post("/generate-stream")
+async def handle_request_stream(request: AIRequest):
+    """
+    Handle request with streaming response.
+    Note: Metadata aggregation is limited in streaming mode.
+    """
+    logger.info(f"Received streaming request from client {request.client_id}")
+    
+    # Quota Check
+    if not quota_manager.check_quota(request.client_id):
+        raise HTTPException(status_code=429, detail="Quota Exceeded")
+        
+    return StreamingResponse(
+        call_gemini_pro_stream(request.prompt),
+        media_type="text/plain"
+    )
+
+
 # Health check endpoint
 @app.get("/health")
 async def health_check():
-    logger.info("Health check endpoint accessed")
-    return {"status": "healthy"}
+    """
+    Comprehensive health check verifying dependencies.
+    """
+    health_status = {
+        "status": "healthy",
+        "dependencies": {
+            "redis": "connected",
+            "chromadb": "connected"
+        }
+    }
+    
+    # Check Redis
+    if not quota_manager.redis_client:
+        health_status["dependencies"]["redis"] = "not_initialized"
+        health_status["status"] = "degraded"
+    else:
+        try:
+            quota_manager.redis_client.ping()
+        except Exception:
+            health_status["dependencies"]["redis"] = "unreachable"
+            health_status["status"] = "degraded"
+            
+    # Check ChromaDB (Semantic Cache)
+    try:
+        from src.services.semantic_cache import semantic_cache
+        # Simple heartbeat or version check
+        semantic_cache.client.heartbeat()
+    except Exception:
+        health_status["dependencies"]["chromadb"] = "unreachable"
+        health_status["status"] = "degraded"
+        
+    return health_status

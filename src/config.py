@@ -9,6 +9,15 @@ class Settings(BaseSettings):
     gemini_cost: float = 0.015
     gemma_cost: float = 0.001
     
+    # Redis settings
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    redis_db: int = 0
+    
+    # Vector DB settings
+    chroma_db_path: str = "./chroma_db"
+    embedding_model_name: str = "all-MiniLM-L6-v2"
+    
     # Semantic cache settings
     similarity_threshold: float = 0.9
     max_cache_size: int = 10000

@@ -1,140 +1,83 @@
 """
-Module for semantic caching in the AI inference router.
+Module for semantic caching in the AI inference router using ChromaDB and Sentence Transformers.
 
-This module implements a semantic cache that stores and retrieves responses
-based on semantic similarity rather than exact matches. This allows for
-efficient reuse of responses when users submit slightly different prompts
-that have similar meaning, reducing both computational cost and response time.
+This module implements a persistent semantic cache that uses vector embeddings
+to store and retrieve responses based on semantic similarity.
 """
 
-import random
+import chromadb
+from chromadb.utils import embedding_functions
 from typing import Optional
-from src.utils.token_counter import count_tokens
 from src.config import settings
+import logging
 
+logger = logging.getLogger(__name__)
 
 class SemanticCache:
     """
-    Semantic cache that simulates vector database lookup using mocked cosine similarity.
-    
-    This implementation stores previous prompts and their responses to avoid
-    recomputation of similar requests. In a production environment, this would
-    interface with a vector database like Pinecone, Weaviate, or FAISS for
-    efficient similarity search.
+    Semantic cache using ChromaDB for vector storage and Sentence Transformers for embeddings.
     """
     
     def __init__(self):
-        """
-        Initialize the semantic cache with an empty dictionary.
-        """
-        self.cache = {}
+        self.client = chromadb.PersistentClient(path=settings.chroma_db_path)
+        self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=settings.embedding_model_name
+        )
+        self.collection = self.client.get_or_create_collection(
+            name="semantic_cache",
+            embedding_function=self.embedding_function
+        )
         self.similarity_threshold = settings.similarity_threshold
-    
-    def _calculate_mock_similarity(self, prompt1: str, prompt2: str) -> float:
-        """
-        Mock function to simulate cosine similarity calculation between two prompts.
-        
-        This is a simplified implementation that uses Jaccard similarity as a proxy
-        for cosine similarity. In a real implementation, this would use vector
-        embeddings and proper cosine similarity calculation.
-        
-        Args:
-            prompt1: First prompt to compare
-            prompt2: Second prompt to compare
-            
-        Returns:
-            Mock similarity score between 0.0 and 1.0
-        """
-        # Calculate a mock similarity based on token overlap and length
-        tokens1 = set(prompt1.lower().split())
-        tokens2 = set(prompt2.lower().split())
-        
-        intersection = tokens1.intersection(tokens2)
-        union = tokens1.union(tokens2)
-        
-        # Jaccard similarity as a simple proxy for cosine similarity
-        jaccard_similarity = len(intersection) / len(union) if union else 0.0
-        
-        # Add some randomness to simulate real-world similarity matching
-        noise = random.uniform(-0.1, 0.1)
-        similarity = max(0.0, min(1.0, jaccard_similarity + noise))
-        
-        return similarity
     
     def lookup(self, prompt: str) -> Optional[str]:
         """
-        Look up a similar prompt in the cache.
-        
-        Iterates through cached prompts and calculates similarity to the input.
-        Returns the cached response if a sufficiently similar prompt is found.
-        
-        Args:
-            prompt: Input prompt to search for
-            
-        Returns:
-            Cached response if similar prompt exists, None otherwise
+        Look up a similar prompt in ChromaDB.
         """
-        for cached_prompt, cached_response in self.cache.items():
-            similarity = self._calculate_mock_similarity(prompt, cached_prompt)
+        try:
+            results = self.collection.query(
+                query_texts=[prompt],
+                n_results=1
+            )
+            
+            if not results['ids'][0]:
+                return None
+            
+            # ChromaDB distance: lower is more similar (0.0 is exact match)
+            # For cosine similarity, threshold might need adjustment
+            # distance = 1 - cosine_similarity
+            distance = results['distances'][0][0]
+            similarity = 1 - distance
             
             if similarity >= self.similarity_threshold:
-                return cached_response
+                return results['documents'][0][0]
+        except Exception as e:
+            logger.error(f"Semantic cache lookup failed: {e}")
         
         return None
     
     def store(self, prompt: str, response: str) -> None:
         """
-        Store a new prompt-response pair in the cache.
-        
-        This method adds a new entry to the cache. In a production system,
-        you might want to implement cache eviction policies to prevent
-        unbounded growth.
-        
-        Args:
-            prompt: Input prompt
-            response: Generated response
+        Store a new prompt-response pair in ChromaDB.
         """
-        # Implement basic size limiting to prevent unbounded growth
-        if len(self.cache) >= settings.max_cache_size:
-            # Simple eviction: remove first item (FIFO)
-            if settings.eviction_policy == "FIFO":
-                first_key = next(iter(self.cache))
-                del self.cache[first_key]
-            # TODO: Implement other eviction policies (LRU, TTL) as needed
-        
-        self.cache[prompt] = response
+        try:
+            # Use prompt hash or uuid as ID
+            import hashlib
+            prompt_id = hashlib.md5(prompt.encode()).hexdigest()
+            
+            self.collection.add(
+                documents=[response],
+                metadatas=[{"prompt": prompt}],
+                ids=[prompt_id]
+            )
+        except Exception as e:
+            logger.error(f"Semantic cache store failed: {e}")
 
 
-# Global instance for the POC
-# In a production system, this would be managed by a dependency injection framework
+# Global instance
 semantic_cache = SemanticCache()
 
-
 async def semantic_cache_lookup(prompt: str) -> Optional[str]:
-    """
-    Async wrapper for semantic cache lookup.
-    
-    This function provides an async interface to the semantic cache lookup
-    functionality, maintaining compatibility with async request handlers.
-    
-    Args:
-        prompt: Input prompt to search for
-        
-    Returns:
-        Cached response if similar prompt exists, None otherwise
-    """
     return semantic_cache.lookup(prompt)
 
-
 def semantic_cache_store(prompt: str, response: str) -> None:
-    """
-    Store a new prompt-response pair in the cache.
-    
-    This function provides a synchronous interface to store responses in the
-    semantic cache.
-    
-    Args:
-        prompt: Input prompt
-        response: Generated response
-    """
     semantic_cache.store(prompt, response)

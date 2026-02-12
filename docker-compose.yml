@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ROUTER_REDIS_HOST=redis
+      - ROUTER_REDIS_PORT=6379
+      - ROUTER_CHROMA_DB_PATH=/app/chroma_db
+    volumes:
+      - ./chroma_db:/app/chroma_db
+    depends_on:
+      - redis
+
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:

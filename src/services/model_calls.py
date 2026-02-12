@@ -13,7 +13,22 @@ import logging
 from typing import Tuple
 
 
+from typing import Tuple, AsyncGenerator
+
+
 logger = logging.getLogger(__name__)
+
+
+async def call_gemini_pro_stream(prompt: str) -> AsyncGenerator[str, None]:
+    """
+    Simulate streaming response from Gemini Pro.
+    """
+    full_response = f"Gemini-2.5-Pro (Streaming): Detailed analysis for '{prompt[:20]}...' "
+    chunks = [full_response[i:i+5] for i in range(0, len(full_response), 5)]
+    
+    for chunk in chunks:
+        await asyncio.sleep(0.1)  # Simulate chunk latency
+        yield chunk
 
 
 async def call_gemini_pro(prompt: str) -> Tuple[str, float]:
