@@ -19,17 +19,17 @@ ModelCall = Callable[[str], Awaitable[Tuple[str, float]]]
 
 
 MODEL_CALLS: Dict[str, ModelCall] = {
-    "Gemma3": call_fine_tuned_gemma3,
-    "Gemini-2.5-Pro": call_gemini_pro,
-    "CodeLlama-Sim": call_code_specialist,
-    "MathHammer": call_math_reasoner,
+    settings.gemma_model_name: call_fine_tuned_gemma3,
+    settings.gemini_model_name: call_gemini_pro,
+    settings.code_model_name: call_code_specialist,
+    settings.math_model_name: call_math_reasoner,
 }
 
 MODEL_COSTS: Dict[str, float] = {
-    "Gemma3": settings.gemma_cost,
-    "Gemini-2.5-Pro": settings.gemini_cost,
-    "CodeLlama-Sim": settings.code_model_cost,
-    "MathHammer": settings.math_model_cost,
+    settings.gemma_model_name: settings.gemma_cost,
+    settings.gemini_model_name: settings.gemini_cost,
+    settings.code_model_name: settings.code_model_cost,
+    settings.math_model_name: settings.math_model_cost,
 }
 
 

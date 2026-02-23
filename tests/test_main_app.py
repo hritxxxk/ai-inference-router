@@ -131,7 +131,7 @@ def test_feedback_persists_review(client):
         preview,
         digest,
         {
-            "target_model": "Gemini-2.5-Pro",
+            "target_model": settings.gemini_model_name,
             "fallback_model": None,
             "confidence": 0.8,
             "task_type": "reasoning",
@@ -143,7 +143,7 @@ def test_feedback_persists_review(client):
     payload = {
         "request_id": request_id,
         "label": "incorrect",
-        "preferred_model": "CodeLlama-Sim",
+        "preferred_model": settings.code_model_name,
         "reviewer": "pytest",
         "quality_score": 2,
         "notes": "Prefer specialist"

@@ -5,7 +5,13 @@ A production-grade FastAPI application that intelligently routes AI inference re
 ## Quick Start
 1. `python -m venv .venv && source .venv/bin/activate`
 2. `pip install -r requirements.txt`
-3. `uvicorn src.main:app --reload --host 0.0.0.0 --port 8000`
+3. Create a `.env` with API keys:
+   ```
+   GOOGLE_API_KEY=your-google-key
+   OPENAI_API_KEY=your-openai-key
+   ROUTER_FEEDBACK_API_KEY=dev-feedback-key
+   ```
+4. `uvicorn src.main:app --reload --host 0.0.0.0 --port 8000`
    - Optional: `docker compose up --build` brings up FastAPI + Redis + Chroma.
    - See `AGENTS.md` for contributor etiquette once you are running locally.
 
@@ -13,7 +19,7 @@ A production-grade FastAPI application that intelligently routes AI inference re
 - **Intelligent Routing** – Complexity + task analyzers feed a weight provider that can hot-reload learned coefficients.
 - **Quota Enforcement** – Client-level limits with pluggable storage to stop quota abuse.
 - **Semantic Cache** – Shared embedding model + async-safe Chroma integration with deterministic in-memory fallback for tests.
-- **Cost Awareness** – Responses include savings vs. Gemini-2.5-Pro so teams can prove ROI.
+- **Cost Awareness** – Responses include savings vs. gemini-3.1-pro so teams can prove ROI.
 - **Observability** – Structured logging, latency middleware, and telemetry rows for every request.
 - **HITL Feedback** – `/feedback` endpoint stores reviewer labels without blocking the FastAPI event loop.
 
@@ -31,6 +37,7 @@ Settings live in `src/config.py` (Pydantic `Settings` class) and accept `ROUTER_
 - `ROUTER_TELEMETRY_DB_PATH` – SQLite path (default `data/router.db`).
 - `ROUTER_ROUTER_WEIGHTS_PATH` – JSON file watched by `WeightProvider`.
 - `ROUTER_SIMILARITY_THRESHOLD`, `ROUTER_TOKEN_THRESHOLD`, `ROUTER_QUOTA_DEFAULT_LIMIT` for routing/cost heuristics.
+- `GOOGLE_API_KEY` / `OPENAI_API_KEY` – loaded via python-dotenv to unlock the real gemini/gemma and GPT-5.3 Codex calls (the router falls back to deterministic simulations when unset).
 
 ## Usage & API
 ```bash
@@ -55,8 +62,8 @@ Feedback submission:
 curl -X POST http://localhost:8000/feedback   -H "Content-Type: application/json"   -H "x-api-key: dev-feedback-key"   -d '{
     "request_id": "<uuid-from-logs>",
     "label": "incorrect",
-    "preferred_model": "Gemini-2.5-Pro",
-    "notes": "Gemma struggled with nuanced reasoning",
+    "preferred_model": "gpt-5.3-codex",
+    "notes": "Prefer a code-focused model",
     "quality_score": 4
   }'
 ```

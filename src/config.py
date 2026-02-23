@@ -1,16 +1,29 @@
-from pydantic import Field, ConfigDict
-from pydantic_settings import BaseSettings
 from typing import Dict, List
+
+from dotenv import load_dotenv
+from pydantic import ConfigDict, Field
+from pydantic_settings import BaseSettings
+
+load_dotenv()
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables or config file."""
-    
-    # Model costs in USD per request
-    gemini_cost: float = 0.015
-    gemma_cost: float = 0.001
-    code_model_cost: float = 0.008
-    math_model_cost: float = 0.012
+
+    # API credentials
+    google_api_key: str = ""
+    openai_api_key: str = ""
+
+    # Production model identifiers + Feb 2026 costs (USD per 1M tokens)
+    gemini_model_name: str = "gemini-3.1-pro"
+    gemma_model_name: str = "gemma-3-27b"
+    code_model_name: str = "gpt-5.3-codex"
+    math_model_name: str = "gemini-3-deep-think"
+
+    gemini_cost: float = 0.012
+    gemma_cost: float = 0.0008
+    code_model_cost: float = 0.010
+    math_model_cost: float = 0.020
     
     # Routing/task analysis configuration
     task_keywords: Dict[str, List[str]] = Field(
@@ -77,7 +90,7 @@ class Settings(BaseSettings):
     )
     router_heads: Dict[str, Dict[str, float]] = Field(
         default_factory=lambda: {
-            "Gemma3": {
+            "gemma-3-27b": {
                 "bias": -0.15,
                 "normalized_tokens": -1.5,
                 "complexity_score": -1.0,
@@ -85,19 +98,19 @@ class Settings(BaseSettings):
                 "math_signal": -0.7,
                 "reasoning_signal": -0.3,
             },
-            "Gemini-2.5-Pro": {
+            "gemini-3.1-pro": {
                 "bias": 0.35,
                 "normalized_tokens": 1.5,
                 "complexity_score": 1.6,
                 "reasoning_signal": 0.6,
                 "summarization_signal": 0.4,
             },
-            "CodeLlama-Sim": {
+            "gpt-5.3-codex": {
                 "bias": -0.1,
                 "code_signal": 2.2,
                 "normalized_tokens": 0.4,
             },
-            "MathHammer": {
+            "gemini-3-deep-think": {
                 "bias": -0.35,
                 "math_signal": 2.4,
                 "normalized_tokens": 0.5,

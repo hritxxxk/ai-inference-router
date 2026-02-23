@@ -2,20 +2,26 @@ import json
 import uuid
 
 import pytest
-from src.utils.token_counter import count_tokens, estimate_total_tokens
-from src.services.quota_store import InMemoryQuotaStore
-from src.services.semantic_cache import SemanticCache
+
+from src.config import settings
+from src.services import fallback_handler
 from src.services.classifier import classify_complexity
 from src.services.model_calls import (
-    call_gemini_pro,
-    call_fine_tuned_gemma3,
     call_code_specialist,
+    call_fine_tuned_gemma3,
+    call_gemini_pro,
 )
-from src.services import fallback_handler
-from src.services.routing_engine import get_task_router, RoutingDecision
+from src.services.quota_store import InMemoryQuotaStore
+from src.services.routing_engine import RoutingDecision, get_task_router
+from src.services.semantic_cache import SemanticCache
 from src.services.telemetry_store import TelemetryStore
 from src.services.weight_provider import WeightProvider
+from src.utils.token_counter import count_tokens, estimate_total_tokens
 from scripts.train_router import train_router
+
+PREMIUM_MODEL = settings.gemini_model_name
+LOW_MODEL = settings.gemma_model_name
+CODE_MODEL = settings.code_model_name
 
 
 @pytest.fixture
@@ -113,30 +119,31 @@ def test_classify_complexity_long_prompt():
 
 @pytest.mark.asyncio
 async def test_gemini_pro_call():
-    """Test Gemini Pro mock call"""
+    """Test Gemini 3.1 Pro call (falls back to simulation when offline)."""
     prompt = "Test prompt"
     response, latency = await call_gemini_pro(prompt)
-    
+
     assert isinstance(response, str)
-    assert "Gemini-2.5-Pro:" in response
+    assert response.strip()
     assert latency > 0
 
 
 @pytest.mark.asyncio
 async def test_gemma3_call():
-    """Test Gemma3 mock call"""
+    """Test Gemma 3 call."""
     prompt = "Test prompt"
     response, latency = await call_fine_tuned_gemma3(prompt)
-    
+
     assert isinstance(response, str)
-    assert "Gemma3:" in response
+    assert response.strip()
     assert latency > 0
 
 @pytest.mark.asyncio
 async def test_code_specialist_call():
     prompt = "def foo(x): return x * 2"
     response, latency = await call_code_specialist(prompt)
-    assert "CodeLlama" in response
+    assert isinstance(response, str)
+    assert response.strip()
     assert latency > 0
 
 
@@ -144,7 +151,7 @@ async def test_code_specialist_call():
 async def test_task_router_detects_code_prompt():
     router = get_task_router()
     decision = await router.route("def bug():\n    return 42")
-    assert decision.target_model == "CodeLlama-Sim"
+    assert decision.target_model == CODE_MODEL
     assert "code" in decision.task_type or decision.features.get("code_signal") > 0
 
 
@@ -153,15 +160,15 @@ async def test_task_router_high_complexity():
     router = get_task_router()
     prompt = "Explain in detail how to design a fault tolerant distributed database with consensus."
     decision = await router.route(prompt)
-    assert decision.target_model in {"Gemini-2.5-Pro", "Gemma3"}
+    assert decision.target_model in {PREMIUM_MODEL, LOW_MODEL}
     assert decision.features["reasoning_signal"] > 0.1
 
 
 @pytest.mark.asyncio
 async def test_get_ai_response_low_complexity():
     decision = RoutingDecision(
-        target_model="Gemma3",
-        fallback_model="Gemini-2.5-Pro",
+        target_model=LOW_MODEL,
+        fallback_model=PREMIUM_MODEL,
         confidence=0.7,
         task_type="reasoning",
         reasons=[],
@@ -169,7 +176,7 @@ async def test_get_ai_response_low_complexity():
     )
     response, model_name, latency, cost, fallback_used = await fallback_handler.get_ai_response("Short prompt", decision)
     assert isinstance(response, str)
-    assert model_name == "Gemma3"
+    assert model_name == LOW_MODEL
     assert latency > 0
     assert cost > 0
     assert fallback_used is False
@@ -178,8 +185,8 @@ async def test_get_ai_response_low_complexity():
 @pytest.mark.asyncio
 async def test_get_ai_response_with_fallback(monkeypatch):
     decision = RoutingDecision(
-        target_model="Gemma3",
-        fallback_model="Gemini-2.5-Pro",
+        target_model=LOW_MODEL,
+        fallback_model=PREMIUM_MODEL,
         confidence=0.5,
         task_type="reasoning",
         reasons=[],
@@ -189,22 +196,22 @@ async def test_get_ai_response_with_fallback(monkeypatch):
     async def _fail(_prompt: str):  # pragma: no cover - forced failure for test
         raise RuntimeError("forced failure")
 
-    monkeypatch.setitem(fallback_handler.MODEL_CALLS, "Gemma3", _fail)
+    monkeypatch.setitem(fallback_handler.MODEL_CALLS, LOW_MODEL, _fail)
     response, model_name, latency, cost, fallback_used = await fallback_handler.get_ai_response("Need reliability", decision)
-    assert model_name == "Gemini-2.5-Pro"
+    assert model_name == PREMIUM_MODEL
     assert fallback_used is True
     assert cost > 0
 
 
 def test_weight_provider_hot_reload(tmp_path):
     weights_path = tmp_path / "weights.json"
-    provider = WeightProvider(str(weights_path), {"Gemma3": {"bias": 0.1}})
+    provider = WeightProvider(str(weights_path), {LOW_MODEL: {"bias": 0.1}})
     heads = provider.get_heads()
-    assert heads["Gemma3"]["bias"] == 0.1
+    assert heads[LOW_MODEL]["bias"] == 0.1
 
-    weights_path.write_text(json.dumps({"Gemma3": {"bias": 0.9}}))
+    weights_path.write_text(json.dumps({LOW_MODEL: {"bias": 0.9}}))
     provider.reload(force=True)
-    assert provider.get_heads()["Gemma3"]["bias"] == 0.9
+    assert provider.get_heads()[LOW_MODEL]["bias"] == 0.9
 
 
 def test_training_script_generates_weights(tmp_path):
@@ -217,8 +224,8 @@ def test_training_script_generates_weights(tmp_path):
         "Preview",
         "hash",
         {
-            "target_model": "Gemma3",
-            "fallback_model": "Gemini-2.5-Pro",
+            "target_model": LOW_MODEL,
+            "fallback_model": PREMIUM_MODEL,
             "confidence": 0.5,
             "task_type": "reasoning",
             "features": {"normalized_tokens": 0.2, "complexity_score": 0.3},
@@ -232,4 +239,4 @@ def test_training_script_generates_weights(tmp_path):
     result = train_router(str(db_path), str(output_path))
     assert result.exists()
     payload = json.loads(result.read_text())
-    assert "Gemma3" in payload
+    assert LOW_MODEL in payload

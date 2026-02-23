@@ -6,9 +6,15 @@ import math
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+from src.config import settings
 from src.services.task_analyzer import PromptAnalysis, get_task_analyzer
 from src.services.weight_provider import WeightProvider, get_weight_provider
-from src.config import settings
+
+
+LOW_COMPLEXITY_MODEL = settings.gemma_model_name
+PREMIUM_MODEL = settings.gemini_model_name
+CODE_MODEL = settings.code_model_name
+MATH_MODEL = settings.math_model_name
 
 
 @dataclass
@@ -56,13 +62,13 @@ class TaskRouter:
         reasons = [f"semantic task={analysis.dominant_task}", f"confidence={score:.2f}"]
         if analysis.token_count > 256:
             reasons.append("long_prompt")
-        if model_name == "Gemma3" and analysis.complexity_score > 0.4:
+        if model_name == LOW_COMPLEXITY_MODEL and analysis.complexity_score > 0.4:
             reasons.append("still within low-complexity threshold")
-        if model_name == "Gemini-2.5-Pro" and analysis.complexity_score > 0.7:
+        if model_name == PREMIUM_MODEL and analysis.complexity_score > 0.7:
             reasons.append("high reasoning demand")
-        if model_name == "CodeLlama-Sim":
+        if model_name == CODE_MODEL:
             reasons.append("code keywords detected")
-        if model_name == "MathHammer":
+        if model_name == MATH_MODEL:
             reasons.append("math signals detected")
         return reasons
 
@@ -79,14 +85,14 @@ class TaskRouter:
         target_model = max(scores, key=scores.get)
         confidence = scores[target_model]
 
-        if target_model == "Gemma3":
-            fallback = "Gemini-2.5-Pro"
-        elif target_model == "Gemini-2.5-Pro":
+        if target_model == LOW_COMPLEXITY_MODEL:
+            fallback = PREMIUM_MODEL
+        elif target_model == PREMIUM_MODEL:
             fallback = None
-        elif target_model == "CodeLlama-Sim":
-            fallback = "Gemma3"
+        elif target_model == CODE_MODEL:
+            fallback = LOW_COMPLEXITY_MODEL
         else:
-            fallback = "Gemini-2.5-Pro"
+            fallback = PREMIUM_MODEL
 
         reasons = self._reason_for_head(target_model, analysis, confidence)
 

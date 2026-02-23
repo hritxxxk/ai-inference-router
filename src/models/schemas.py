@@ -65,7 +65,7 @@ class AIResponse(BaseModel):
     """The AI-generated response content."""
     
     model_used: str
-    """Name of the model that processed the request (e.g., 'Gemma3', 'Gemini-Pro', 'CACHE')."""
+    """Name of the model that processed the request (e.g., 'gemma-3-27b', 'gemini-3.1-pro', 'CACHE')."""
     
     latency_ms: float
     """Total processing time in milliseconds."""
