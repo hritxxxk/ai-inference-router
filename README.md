@@ -1,120 +1,81 @@
 # AI Inference Router
 
-A production-grade FastAPI application that intelligently routes AI inference requests to optimize cost and performance. The router evaluates incoming prompts and decides whether to use expensive, high-capability models or cheaper, faster alternatives based on complexity analysis.
+A production-grade FastAPI application that intelligently routes AI inference requests to optimize cost, latency, and user satisfaction. The router analyzes every prompt, logs the full feature vector, and makes data-backed decisions on whether to invoke high-end or budget models.
+
+## Quick Start
+1. `python -m venv .venv && source .venv/bin/activate`
+2. `pip install -r requirements.txt`
+3. `uvicorn src.main:app --reload --host 0.0.0.0 --port 8000`
+   - Optional: `docker compose up --build` brings up FastAPI + Redis + Chroma.
+   - See `AGENTS.md` for contributor etiquette once you are running locally.
 
 ## Features
+- **Intelligent Routing** – Complexity + task analyzers feed a weight provider that can hot-reload learned coefficients.
+- **Quota Enforcement** – Client-level limits with pluggable storage to stop quota abuse.
+- **Semantic Cache** – Shared embedding model + async-safe Chroma integration with deterministic in-memory fallback for tests.
+- **Cost Awareness** – Responses include savings vs. Gemini-2.5-Pro so teams can prove ROI.
+- **Observability** – Structured logging, latency middleware, and telemetry rows for every request.
+- **HITL Feedback** – `/feedback` endpoint stores reviewer labels without blocking the FastAPI event loop.
 
-- **Intelligent Routing**: Analyzes prompts using configurable token count threshold and reasoning keywords to determine optimal model selection
-- **Quota Management**: Tracks and enforces per-client request limits with an extensible storage interface
-- **Semantic Caching**: Implements vector similarity-based caching to avoid recomputation of similar requests
-- **Cost Optimization**: Routes simple requests to cheaper models, saving up to 93% on costs
-- **Reliability**: Includes fallback mechanisms to ensure requests are processed even if preferred models fail
-- **Observability**: Comprehensive logging and timing middleware for performance monitoring
-- **Configurable**: Uses Pydantic settings for easy configuration of costs, thresholds, and limits
-- **Response Enrichment**: Provides detailed metadata including cost savings, latency, and token counts
+## Project Layout
+- `src/main.py` wires routes, middleware, dependency injection, and shared singletons.
+- `src/services/` contains router heads, quota manager, cache, and telemetry store.
+- `src/models/` defines Pydantic schemas for requests/responses.
+- `src/utils/` houses helpers such as token counters and embedding adapters.
+- `scripts/train_router.py` consumes telemetry + feedback to export weights.
+- `tests/` mirrors the service layout for pytest coverage.
 
-## Architecture
+## Configuration & Environment
+Settings live in `src/config.py` (Pydantic `Settings` class) and accept `ROUTER_*` environment variables or `config.yaml` overrides. Common knobs:
+- `ROUTER_FEEDBACK_API_KEY` – required `x-api-key` header for `/feedback`.
+- `ROUTER_TELEMETRY_DB_PATH` – SQLite path (default `data/router.db`).
+- `ROUTER_ROUTER_WEIGHTS_PATH` – JSON file watched by `WeightProvider`.
+- `ROUTER_SIMILARITY_THRESHOLD`, `ROUTER_TOKEN_THRESHOLD`, `ROUTER_QUOTA_DEFAULT_LIMIT` for routing/cost heuristics.
 
-The application follows a service-oriented architecture with clear separation of concerns:
-
-- `models/` - Pydantic schemas for request/response validation
-- `services/` - Business logic for routing, caching, classification, etc.
-- `utils/` - Utility functions like token counting
-- `middleware/` - Cross-cutting concerns like request timing
-- `config.py` - Application configuration using Pydantic Settings
-
-## Configuration
-
-The application uses Pydantic Settings for configuration management. Key configurable parameters include:
-
-- Model costs (gemini_pro, gemma3)
-- Semantic cache settings (similarity threshold, max cache size, eviction policy)
-- Quota settings (default limit)
-- Classifier settings (token threshold)
-
-Configuration can be set via environment variables prefixed with `ROUTER_` or by modifying the settings class directly.
-
-## Components
-
-### Complexity Classifier
-Analyzes prompts using:
-- Configurable token count threshold (default: 128 tokens)
-- Reasoning keywords (analyze, explain, summarize, etc.)
-
-### Quota Manager
-Abstract interface supporting different storage backends (in-memory for POC, Redis-ready for production)
-
-### Semantic Cache
-Simulates vector database lookup using mocked cosine similarity with configurable threshold
-
-### Model Call Handlers
-Mock implementations showing latency differences between expensive (Gemini-2.5-Pro) and cheap (Gemma3) models
-
-### Response Aggregator
-Builds comprehensive responses with cost and performance metrics
-
-## Usage
-
+## Usage & API
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the application
-uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn src.main:app --reload
 ```
+Endpoints:
+- `POST /generate` – Core inference request.
+- `GET /health` – Liveness probe.
+- `POST /feedback` – Human label submission (requires `x-api-key`).
 
-## API Endpoints
-
-- `POST /generate` - Submit a prompt for AI processing
-- `GET /health` - Health check endpoint
-
-### Example Request
-
+Example generate payload:
 ```json
 {
   "prompt": "Explain quantum computing in simple terms",
   "client_id": "client_001"
 }
 ```
+Responses echo routing metadata such as `model_used`, `latency_ms`, `cost_avoided_usd`, and `complexity_analysis`.
 
-### Example Response
-
-```json
-{
-  "result": "Quantum computing explained...",
-  "model_used": "Gemma3",
-  "latency_ms": 450.23,
-  "cached": false,
-  "cost_estimate": 0.001,
-  "metadata": {
-    "tokens": 120,
-    "latency_ms": 450.23,
-    "optimization_strategy": "Routed to LOW Complexity",
-    "cost_avoided_usd": 0.014,
-    "savings_multiplier": "15.0x cheaper",
-    "complexity_analysis": {
-      "token_count": 8,
-      "has_complex_intent": false,
-      "is_high_token_count": false,
-      "complex_keywords_found": []
-    }
-  }
-}
+Feedback submission:
+```bash
+curl -X POST http://localhost:8000/feedback   -H "Content-Type: application/json"   -H "x-api-key: dev-feedback-key"   -d '{
+    "request_id": "<uuid-from-logs>",
+    "label": "incorrect",
+    "preferred_model": "Gemini-2.5-Pro",
+    "notes": "Gemma struggled with nuanced reasoning",
+    "quality_score": 4
+  }'
 ```
+
+## Telemetry & Feedback Data Model
+- `telemetry_decisions` – One row per `/generate` call storing `request_id`, selected model, latency, cost estimates, prompt embedding, and serialized feature vector.
+- `feedback` – Optional reviewer labels joined via the same `request_id`, including `label`, `preferred_model`, and `quality_score` weights.
+- Writes are queued through `TelemetryStore` so API handlers remain async-friendly.
+- SQLite lives under `data/router.db`; back it up before destructive work.
+
+## Training & Weight Reload
+1. Capture traffic + reviewer labels as described above.
+2. Run `python scripts/train_router.py --db data/router.db --out data/router_weights.json`.
+3. The script fits least-squares heads per model (with quality-score weighting) and writes JSON.
+4. The running app reloads new weights via `WeightProvider` automatically—no restart required.
 
 ## Testing
-
-Run the tests using pytest:
-
+Use pytest + pytest-asyncio:
 ```bash
-pytest tests/
+pytest tests
 ```
-
-## Design Principles
-
-- **Extensibility**: Abstract interfaces allow easy swapping of components (e.g., cache storage, quota backend)
-- **Configurability**: Key parameters are configurable via environment variables
-- **Observability**: Comprehensive logging and timing information for monitoring
-- **Cost Efficiency**: Intelligent routing minimizes expensive model usage
-- **Reliability**: Fallback mechanisms ensure service availability
-- **Performance**: Caching and intelligent routing reduce response times
+The suite exercises router scoring, cache fallbacks, `/feedback` auth, telemetry store behavior, and the training pipeline.

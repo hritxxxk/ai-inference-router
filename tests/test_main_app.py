@@ -1,20 +1,41 @@
+import hashlib
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
+
+from src.config import settings
 from src.main import app
 from src.models.schemas import AIRequest
+from src.services.telemetry_store import telemetry_store
+from src.services.quota_store import InMemoryQuotaStore
 
 
-client = TestClient(app)
+@pytest.fixture()
+def client(monkeypatch):
+    from src import main as main_module
+
+    main_module.quota_manager = InMemoryQuotaStore()
+    with TestClient(app) as test_client:
+        yield test_client
 
 
-def test_health_endpoint():
+def _prompt_preview_and_hash(prompt: str) -> tuple[str, str]:
+    preview = prompt.strip().replace("\n", " ")[:120]
+    digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    return preview, digest
+
+
+def test_health_endpoint(client):
     """Test the health check endpoint"""
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy"}
+    payload = response.json()
+    assert payload["status"] in {"healthy", "degraded"}
+    assert "dependencies" in payload
 
 
-def test_generate_endpoint_basic():
+def test_generate_endpoint_basic(client):
     """Test the generate endpoint with a basic request"""
     request_data = {
         "prompt": "Hello, how are you?",
@@ -33,7 +54,7 @@ def test_generate_endpoint_basic():
     assert "metadata" in data
 
 
-def test_generate_endpoint_quota_exceeded():
+def test_generate_endpoint_quota_exceeded(client):
     """Test the generate endpoint when quota is exceeded"""
     # Use a client with a low quota limit
     request_data = {
@@ -52,7 +73,7 @@ def test_generate_endpoint_quota_exceeded():
     assert response.json()["detail"] == "Quota Exceeded"
 
 
-def test_generate_endpoint_cache_hit():
+def test_generate_endpoint_cache_hit(client):
     """Test that repeated requests result in cache hits"""
     request_data = {
         "prompt": "What is the weather today?",
@@ -76,7 +97,75 @@ def test_generate_endpoint_cache_hit():
     assert data2["cached"] is True
 
 
-def test_generate_endpoint_complexity_routing():
+def test_feedback_requires_api_key(client):
+    payload = {
+        "request_id": str(uuid.uuid4()),
+        "label": "correct"
+    }
+    response = client.post("/feedback", json=payload)
+    assert response.status_code == 401
+
+
+def test_feedback_rejects_unknown_request(client):
+    payload = {
+        "request_id": str(uuid.uuid4()),
+        "label": "incorrect",
+        "notes": "should look at another model"
+    }
+    response = client.post(
+        "/feedback",
+        json=payload,
+        headers={"x-api-key": settings.feedback_api_key},
+    )
+    assert response.status_code == 404
+
+
+def test_feedback_persists_review(client):
+    request_id = str(uuid.uuid4())
+    client_id = "feedback_client"
+    prompt = "Explain how the router should behave"
+    preview, digest = _prompt_preview_and_hash(prompt)
+    telemetry_store.persist_decision(
+        request_id,
+        client_id,
+        preview,
+        digest,
+        {
+            "target_model": "Gemini-2.5-Pro",
+            "fallback_model": None,
+            "confidence": 0.8,
+            "task_type": "reasoning",
+            "features": {"normalized_tokens": 0.5},
+            "reasons": ["unit-test"],
+        },
+        embedding=[0.1, 0.2, 0.3],
+    )
+    payload = {
+        "request_id": request_id,
+        "label": "incorrect",
+        "preferred_model": "CodeLlama-Sim",
+        "reviewer": "pytest",
+        "quality_score": 2,
+        "notes": "Prefer specialist"
+    }
+    response = client.post(
+        "/feedback",
+        json=payload,
+        headers={"x-api-key": settings.feedback_api_key},
+    )
+    assert response.status_code == 202
+    body = response.json()
+    assert body["request_id"] == request_id
+    assert body["status"] == "accepted"
+    
+    # Wait for background task
+    import time
+    time.sleep(0.1)
+    
+    assert telemetry_store.feedback_count(request_id) >= 1
+
+
+def test_generate_endpoint_complexity_routing(client):
     """Test that complex prompts are routed to expensive model"""
     # Simple prompt should use cheaper model
     simple_request = {

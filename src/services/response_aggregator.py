@@ -19,7 +19,7 @@ def build_response_aggregator(
     cached: bool,
     prompt: str,
     cost_estimate: float,
-    complexity_metadata: Dict[str, Any],
+    routing_metadata: Dict[str, Any],
     optimization_strategy: str
 ) -> Dict[str, Any]:
     """
@@ -49,19 +49,11 @@ def build_response_aggregator(
     total_tokens = estimate_total_tokens(prompt, result)
     
     # Calculate cost savings if applicable using configurable values
-    gemini_cost = settings.gemini_cost  # Cost per request for Gemini Pro
-    gemma_cost = settings.gemma_cost   # Cost per request for Gemma3
-    cost_savings_usd = 0.0
-    
-    if model_used == "Gemma3":
-        # Savings when using cheaper model instead of expensive one
-        cost_savings_usd = gemini_cost - gemma_cost
-    elif model_used == "Gemini-2.5-Pro (Fallback)":
-        # No savings when falling back to expensive model
-        cost_savings_usd = 0.0
-    
-    # Calculate savings multiplier for reporting
-    savings_multiplier = round(gemini_cost / gemma_cost, 1) if model_used == "Gemma3" else 1.0
+    gemini_cost = settings.gemini_cost
+    cost_savings_usd = max(0.0, gemini_cost - cost_estimate)
+    savings_multiplier = 1.0
+    if cost_estimate > 0 and cost_estimate < gemini_cost:
+        savings_multiplier = round(gemini_cost / cost_estimate, 1)
     
     # Build the comprehensive response object
     response = {
@@ -76,8 +68,14 @@ def build_response_aggregator(
             "optimization_strategy": optimization_strategy,
             "cost_avoided_usd": cost_savings_usd,
             "savings_multiplier": f"{savings_multiplier}x cheaper" if savings_multiplier > 1 else "Standard cost",
-            "complexity_analysis": complexity_metadata
+            "complexity_analysis": {
+                "task_type": routing_metadata.get("task_type"),
+                "router_confidence": routing_metadata.get("confidence"),
+                "router_features": routing_metadata.get("features"),
+                "fallback_used": routing_metadata.get("fallback_used", False),
+                "reasons": routing_metadata.get("reasons", []),
+            }
         }
     }
-    
+
     return response

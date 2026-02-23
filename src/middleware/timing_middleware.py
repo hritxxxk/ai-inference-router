@@ -44,16 +44,18 @@ class TimingMiddleware(BaseHTTPMiddleware):
         """
         start_time = time.time()
         
+        response = None
         try:
-            response: StarletteResponse = await call_next(request)
+            response = await call_next(request)
         finally:
             process_time = time.time() - start_time
-            response.headers["X-Process-Time"] = f"{process_time:.4f}s"
+            if response is not None:
+                response.headers["X-Process-Time"] = f"{process_time:.4f}s"
             
             # Log the request timing for monitoring and analysis
             logger.info(
                 f"{request.method} {request.url.path} - "
-                f"Status: {response.status_code} - "
+                f"Status: {getattr(response, 'status_code', 'error')} - "
                 f"Process Time: {process_time:.4f}s"
             )
         

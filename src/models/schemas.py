@@ -7,8 +7,8 @@ comprehensive metadata fields that provide insights into processing
 metrics, costs, and optimization strategies.
 """
 
-from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, Literal
 
 
 class AIRequest(BaseModel):
@@ -78,3 +78,29 @@ class AIResponse(BaseModel):
     
     metadata: Metadata
     """Additional metadata about the processing, including performance and cost metrics."""
+
+
+class FeedbackPayload(BaseModel):
+    """Schema for the human-in-the-loop feedback endpoint."""
+
+    request_id: str = Field(..., description="Identifier returned from /generate logs")
+    label: Literal["correct", "incorrect", "escalate", "retry"]
+    preferred_model: Optional[str] = Field(
+        default=None, description="Model the reviewer would have preferred"
+    )
+    reviewer: Optional[str] = Field(
+        default=None, description="Reviewer handle or email for traceability"
+    )
+    notes: Optional[str] = Field(
+        default=None, max_length=2000, description="Additional guidance for retraining"
+    )
+    quality_score: Optional[int] = Field(
+        default=None, ge=1, le=5, description="Optional Likert score"
+    )
+
+
+class FeedbackResponse(BaseModel):
+    """Acknowledgement payload for /feedback submissions."""
+
+    status: str
+    request_id: str

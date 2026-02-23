@@ -1,19 +1,8 @@
-"""
-Module for simulating AI model calls in the inference router.
-
-This module contains mock implementations of calls to different AI models
-with varying computational complexity and response times. These functions
-simulate the behavior of real API calls to expensive (Gemini-2.5-Pro) and 
-inexpensive (Gemma3) models, allowing for testing of the routing logic 
-without incurring actual costs.
-"""
+"""Simulated model calls for the inference router."""
 
 import asyncio
 import logging
-from typing import Tuple
-
-
-from typing import Tuple, AsyncGenerator
+from typing import AsyncGenerator, Tuple
 
 
 logger = logging.getLogger(__name__)
@@ -88,4 +77,24 @@ async def call_fine_tuned_gemma3(prompt: str) -> Tuple[str, float]:
     
     logger.info(f"Gemma3 call completed with latency: {latency:.2f}s")
     
+    return response, latency
+
+
+async def call_code_specialist(prompt: str) -> Tuple[str, float]:
+    """Simulate a code-focused expert model."""
+    start_time = asyncio.get_event_loop().time()
+    await asyncio.sleep(0.6)
+    latency = asyncio.get_event_loop().time() - start_time
+    response = f"CodeLlama-Sim: Refined code guidance for '{prompt[:40]}...'"
+    logger.info("Code specialist call completed with latency: %.2fs", latency)
+    return response, latency
+
+
+async def call_math_reasoner(prompt: str) -> Tuple[str, float]:
+    """Simulate a math-heavy reasoning model."""
+    start_time = asyncio.get_event_loop().time()
+    await asyncio.sleep(1.0)
+    latency = asyncio.get_event_loop().time() - start_time
+    response = f"MathHammer: Formal derivation for '{prompt[:40]}...'"
+    logger.info("Math reasoner call completed with latency: %.2fs", latency)
     return response, latency

@@ -1,11 +1,21 @@
+import json
+import uuid
+
 import pytest
-import asyncio
 from src.utils.token_counter import count_tokens, estimate_total_tokens
 from src.services.quota_store import InMemoryQuotaStore
-from src.services.semantic_cache import SemanticCache, SIMILARITY_THRESHOLD
+from src.services.semantic_cache import SemanticCache
 from src.services.classifier import classify_complexity
-from src.services.model_calls import call_gemini_pro, call_fine_tuned_gemma3
-from src.services.fallback_handler import get_ai_response
+from src.services.model_calls import (
+    call_gemini_pro,
+    call_fine_tuned_gemma3,
+    call_code_specialist,
+)
+from src.services import fallback_handler
+from src.services.routing_engine import get_task_router, RoutingDecision
+from src.services.telemetry_store import TelemetryStore
+from src.services.weight_provider import WeightProvider
+from scripts.train_router import train_router
 
 
 @pytest.fixture
@@ -80,7 +90,7 @@ def test_classify_complexity_short_prompt():
     
     assert complexity == "LOW"
     assert "token_count" in metadata
-    assert "has_complex_intent" in metadata
+    assert "has_complex_keywords" in metadata
 
 
 def test_classify_complexity_with_reasoning_keyword():
@@ -89,7 +99,7 @@ def test_classify_complexity_with_reasoning_keyword():
     complexity, metadata = classify_complexity(prompt)
     
     assert complexity == "HIGH"
-    assert metadata["has_complex_intent"] is True
+    assert metadata["has_complex_keywords"] is True
 
 
 def test_classify_complexity_long_prompt():
@@ -108,7 +118,7 @@ async def test_gemini_pro_call():
     response, latency = await call_gemini_pro(prompt)
     
     assert isinstance(response, str)
-    assert "Gemini Pro:" in response
+    assert "Gemini-2.5-Pro:" in response
     assert latency > 0
 
 
@@ -122,26 +132,104 @@ async def test_gemma3_call():
     assert "Gemma3:" in response
     assert latency > 0
 
+@pytest.mark.asyncio
+async def test_code_specialist_call():
+    prompt = "def foo(x): return x * 2"
+    response, latency = await call_code_specialist(prompt)
+    assert "CodeLlama" in response
+    assert latency > 0
+
+
+@pytest.mark.asyncio
+async def test_task_router_detects_code_prompt():
+    router = get_task_router()
+    decision = await router.route("def bug():\n    return 42")
+    assert decision.target_model == "CodeLlama-Sim"
+    assert "code" in decision.task_type or decision.features.get("code_signal") > 0
+
+
+@pytest.mark.asyncio
+async def test_task_router_high_complexity():
+    router = get_task_router()
+    prompt = "Explain in detail how to design a fault tolerant distributed database with consensus."
+    decision = await router.route(prompt)
+    assert decision.target_model in {"Gemini-2.5-Pro", "Gemma3"}
+    assert decision.features["reasoning_signal"] > 0.1
+
 
 @pytest.mark.asyncio
 async def test_get_ai_response_low_complexity():
-    """Test AI response with low complexity (should use Gemma3)"""
-    prompt = "Short prompt"
-    response, model_name, latency, cost = await get_ai_response(prompt, "LOW")
-    
+    decision = RoutingDecision(
+        target_model="Gemma3",
+        fallback_model="Gemini-2.5-Pro",
+        confidence=0.7,
+        task_type="reasoning",
+        reasons=[],
+        features={"complexity_score": 0.2},
+    )
+    response, model_name, latency, cost, fallback_used = await fallback_handler.get_ai_response("Short prompt", decision)
     assert isinstance(response, str)
-    assert model_name in ["Gemma3", "Gemini-Pro (Fallback)"]  # Could be fallback if Gemma3 fails
+    assert model_name == "Gemma3"
     assert latency > 0
-    assert cost >= 0
+    assert cost > 0
+    assert fallback_used is False
 
 
 @pytest.mark.asyncio
-async def test_get_ai_response_high_complexity():
-    """Test AI response with high complexity (should use Gemini Pro)"""
-    prompt = "Analyze this complex topic in detail"
-    response, model_name, latency, cost = await get_ai_response(prompt, "HIGH")
-    
-    assert isinstance(response, str)
-    assert model_name == "Gemini-Pro"
-    assert latency > 0
+async def test_get_ai_response_with_fallback(monkeypatch):
+    decision = RoutingDecision(
+        target_model="Gemma3",
+        fallback_model="Gemini-2.5-Pro",
+        confidence=0.5,
+        task_type="reasoning",
+        reasons=[],
+        features={"complexity_score": 0.9},
+    )
+
+    async def _fail(_prompt: str):  # pragma: no cover - forced failure for test
+        raise RuntimeError("forced failure")
+
+    monkeypatch.setitem(fallback_handler.MODEL_CALLS, "Gemma3", _fail)
+    response, model_name, latency, cost, fallback_used = await fallback_handler.get_ai_response("Need reliability", decision)
+    assert model_name == "Gemini-2.5-Pro"
+    assert fallback_used is True
     assert cost > 0
+
+
+def test_weight_provider_hot_reload(tmp_path):
+    weights_path = tmp_path / "weights.json"
+    provider = WeightProvider(str(weights_path), {"Gemma3": {"bias": 0.1}})
+    heads = provider.get_heads()
+    assert heads["Gemma3"]["bias"] == 0.1
+
+    weights_path.write_text(json.dumps({"Gemma3": {"bias": 0.9}}))
+    provider.reload(force=True)
+    assert provider.get_heads()["Gemma3"]["bias"] == 0.9
+
+
+def test_training_script_generates_weights(tmp_path):
+    db_path = tmp_path / "router.db"
+    store = TelemetryStore(str(db_path))
+    request_id = str(uuid.uuid4())
+    store.persist_decision(
+        request_id,
+        "trainer",
+        "Preview",
+        "hash",
+        {
+            "target_model": "Gemma3",
+            "fallback_model": "Gemini-2.5-Pro",
+            "confidence": 0.5,
+            "task_type": "reasoning",
+            "features": {"normalized_tokens": 0.2, "complexity_score": 0.3},
+            "reasons": ["unit-test"],
+        },
+        embedding=[0.1, 0.2],
+    )
+    store.record_feedback(request_id, "correct", None, "tester", None, 5)
+
+    output_path = tmp_path / "weights.json"
+    result = train_router(str(db_path), str(output_path))
+    assert result.exists()
+    payload = json.loads(result.read_text())
+    assert "Gemma3" in payload

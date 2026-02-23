@@ -4,13 +4,13 @@ Module for classifying the complexity of AI prompts using embeddings and heurist
 
 from typing import Tuple
 import numpy as np
-from sentence_transformers import SentenceTransformer
 from src.utils.token_counter import count_tokens
 from src.config import settings
+from src.services.embedding_provider import get_embedding_model
 
 # Initialize model for complexity embedding
 # In production, this would be a shared service or managed via dependency injection
-model = SentenceTransformer(settings.embedding_model_name)
+model = get_embedding_model()
 
 # Reference embeddings for complex reasoning tasks
 COMPLEX_SAMPLES = [

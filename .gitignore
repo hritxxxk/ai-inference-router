@@ -40,6 +40,8 @@ htmlcov/
 # Project Specific
 chroma_db/
 models_cache/
+data/
+tests/.tmp/
 .env
 *.log
 
