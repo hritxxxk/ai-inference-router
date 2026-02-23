@@ -1,18 +1,15 @@
 # AI Inference Router
 
-A production-grade FastAPI application that intelligently routes AI inference requests to optimize cost, latency, and user satisfaction. The router analyzes every prompt, logs the full feature vector, and makes data-backed decisions on whether to invoke high-end or budget models.
+A production-grade FastAPI application that intelligently routes AI inference requests to optimize cost, latency, and user satisfaction. The router analyzes every prompt, logs the full feature vector, and makes data-backed decisions on whether to invoke high-end or budget models. 
 
 ## Quick Start
-1. `python -m venv .venv && source .venv/bin/activate`
-2. `pip install -r requirements.txt`
-3. Create a `.env` with API keys:
+Required API keys:
    ```
    GOOGLE_API_KEY=your-google-key
    OPENAI_API_KEY=your-openai-key
    ROUTER_FEEDBACK_API_KEY=dev-feedback-key
    ```
-4. `uvicorn src.main:app --reload --host 0.0.0.0 --port 8000`
-   - Optional: `docker compose up --build` brings up FastAPI + Redis + Chroma.
+To start - `uvicorn src.main:app --reload --host 0.0.0.0 --port 8000` or `docker compose up --build` 
    - See `AGENTS.md` for contributor etiquette once you are running locally.
 
 ## Features
@@ -37,7 +34,7 @@ Settings live in `src/config.py` (Pydantic `Settings` class) and accept `ROUTER_
 - `ROUTER_TELEMETRY_DB_PATH` – SQLite path (default `data/router.db`).
 - `ROUTER_ROUTER_WEIGHTS_PATH` – JSON file watched by `WeightProvider`.
 - `ROUTER_SIMILARITY_THRESHOLD`, `ROUTER_TOKEN_THRESHOLD`, `ROUTER_QUOTA_DEFAULT_LIMIT` for routing/cost heuristics.
-- `GOOGLE_API_KEY` / `OPENAI_API_KEY` – loaded via python-dotenv to unlock the real gemini/gemma and GPT-5.3 Codex calls (the router falls back to deterministic simulations when unset).
+- `GOOGLE_API_KEY` / `OPENAI_API_KEY` – loaded via python-dotenv to unlock the real gemini/gemma and GPT-5.3 Codex calls (NOTE: the router falls back to deterministic simulations when unset).
 
 ## Usage & API
 ```bash
