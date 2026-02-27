@@ -61,15 +61,15 @@ def test_quota_store_basic():
     quota_store = InMemoryQuotaStore()
     
     # Test initial state
-    assert quota_store.check_quota("client_001", increment=False) is True
+    assert quota_store.check_quota("default", increment=False) is True
     
     # Consume quota
-    assert quota_store.check_quota("client_001") is True  # First request
+    assert quota_store.check_quota("default") is True  # First request
     # Set usage to limit to test quota exceeded
-    quota_store._usage["client_001"] = quota_store._limits["client_001"]
+    quota_store._usage["default"] = quota_store._limits["default"]
     
     # Should fail now
-    assert quota_store.check_quota("client_001", increment=False) is False
+    assert quota_store.check_quota("default", increment=False) is False
 
 
 def test_semantic_cache():
@@ -180,7 +180,6 @@ async def test_get_ai_response_low_complexity():
     assert latency > 0
     assert cost > 0
     assert fallback_used is False
-
 
 @pytest.mark.asyncio
 async def test_get_ai_response_with_fallback(monkeypatch):

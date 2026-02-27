@@ -87,10 +87,9 @@ class InMemoryQuotaStore(BaseQuotaStore):
     """
     
     def __init__(self):
-        # Default limits and usage for demonstration
-        # In a real application, these would come from a configuration source
-        self._limits: Dict[str, int] = {"client_001": 100, "client_002": 5}
-        self._usage: Dict[str, int] = {"client_001": 0, "client_002": 0}
+        # Use limits from configuration instead of hardcoded values
+        self._limits: Dict[str, int] = settings.quota_limits.copy()
+        self._usage: Dict[str, int] = {k: 0 for k in self._limits.keys()}
         self._default_limit = settings.quota_default_limit
     
     def check_quota(self, client_id: str, increment: bool = True) -> bool:

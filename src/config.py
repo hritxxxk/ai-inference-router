@@ -137,6 +137,7 @@ class Settings(BaseSettings):
     
     # Quota settings
     quota_default_limit: int = 10
+    quota_limits: Dict[str, int] = Field(default_factory=lambda: {"default": 10})
     
     # Complexity classifier settings
     token_threshold: int = 128  # Threshold for high complexity
